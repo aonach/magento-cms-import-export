@@ -217,7 +217,22 @@ class ImportCmsDataService
             }
             $identifier = str_replace($dirPath, '', $filePath);
             $identifier = str_replace('.html', '', $identifier);
-            $identifier = substr_replace($identifier, '', strpos($identifier, '---'));
+            // Extract identifier by reading the JSON to get accurate block identifier
+            // This properly handles multi-store files like identifier---ie---uk.html
+            $jsonData = null;
+            try {
+                $jsonData = $this->serializer->unserialize($this->directoryRead->readFile(str_replace('.html', '.json', $filePath)));
+            } catch (\Exception $exception) {
+                // If JSON is unreadable, fall back to original logic
+            }
+
+            if ($jsonData && isset($jsonData['identifier'])) {
+                // Use identifier from JSON for accurate extraction
+                $identifier = $jsonData['identifier'];
+            } else {
+                // Fallback: extract from filename (original logic for backwards compatibility)
+                $identifier = substr_replace($identifier, '', strpos($identifier, '---'));
+            }
             if ($identifiers !== null && !in_array($identifier, $identifiers)) {
                 // If we have a list of items, we skip if its not in the list
                 continue;
@@ -286,9 +301,24 @@ class ImportCmsDataService
             }
             $identifier = str_replace($dirPath, '', $filePath);
             $identifier = str_replace('.html', '', $identifier);
-            $identifier = substr_replace($identifier, '', strrpos($identifier, '---'));
-            $identifier = str_replace('---', '/', $identifier);
-            $identifier = str_replace('_html', '.html', $identifier);
+            // Extract identifier by reading the JSON to get actual store codes
+            // This properly handles multi-store files like identifier---ie---uk.html
+            $jsonData = null;
+            try {
+                $jsonData = $this->serializer->unserialize($this->directoryRead->readFile(str_replace('.html', '.json', $filePath)));
+            } catch (\Exception $exception) {
+                // If JSON is unreadable, fall back to original logic
+            }
+
+            if ($jsonData && isset($jsonData['identifier'])) {
+                // Use identifier from JSON for accurate extraction
+                $identifier = $jsonData['identifier'];
+            } else {
+                // Fallback: extract from filename (original logic for backwards compatibility)
+                $identifier = substr_replace($identifier, '', strrpos($identifier, '---'));
+                $identifier = str_replace('---', '/', $identifier);
+                $identifier = str_replace('_html', '.html', $identifier);
+            }
             if ($identifiers !== null && !in_array($identifier, $identifiers)) {
                 // If we have a list of items, we skip if its not in the list
                 continue;
@@ -419,6 +449,7 @@ class ImportCmsDataService
      *
      * We load store by store code specified in $filePath
      * Further we validate it against the data we have in JSON and if currently existing block/page
+     * Now supports multi-store pages/blocks (e.g., identifier---ie---uk.html)
      */
     private function validateStoreAssociation(
         string $filePath,
@@ -427,24 +458,27 @@ class ImportCmsDataService
         string $entityType
     ) : void {
         $exceptionMessage = sprintf('%s with path %s has inconsistent store data', $entityType, $filePath);
-        if (count($storeIds) > 1) {
-            throw new \LogicException($exceptionMessage);
-        }
-        $storeCode = $this->getStoreCode($filePath);
-        $storeId = (int)reset($storeIds);
-        $currentStoreIds = $entity->getStoreId();
-        if ($storeCode === '_all_') {
-            if ($storeId !== 0 || count($currentStoreIds) > 1 || (int)reset($currentStoreIds) !== 0) {
+        $storeCodesFromFile = $this->getStoreCodesFromFile($filePath);
+
+        // For _all_, validate that storeIds contains admin store (0)
+        if (in_array('_all_', $storeCodesFromFile)) {
+            if (count($storeIds) !== 1 || (int)reset($storeIds) !== 0) {
                 throw new \LogicException($exceptionMessage);
             }
-            return ;
-        }
-        $store = $this->storeRepository->get($storeId);
-        if ($store->getCode() !== $storeCode) {
-            throw new \LogicException($exceptionMessage);
+            return;
         }
 
-        if (array_diff($currentStoreIds, $storeIds) !== []) {
+        // For specific stores, validate that the store codes match the store IDs
+        $storeCodesFromIds = [];
+        foreach ($storeIds as $storeId) {
+            $store = $this->storeRepository->get((int)$storeId);
+            $storeCodesFromIds[] = $store->getCode();
+        }
+
+        sort($storeCodesFromFile);
+        sort($storeCodesFromIds);
+
+        if ($storeCodesFromFile !== $storeCodesFromIds) {
             throw new \LogicException($exceptionMessage);
         }
     }
@@ -454,5 +488,22 @@ class ImportCmsDataService
         $storeCode = str_replace('.html', '', $filePath);
         $storeCode = substr($storeCode, strrpos($storeCode, '---') + 3);
         return $storeCode;
+    }
+
+    /**
+     * Extract all store codes from filename
+     * Handles both single store (identifier---uk.html) and multi-store (identifier---ie---uk.html)
+     * Also handles _all_ special case (identifier---_all_.html)
+     */
+    private function getStoreCodesFromFile(string $filePath) : array
+    {
+        $storeCodeStr = str_replace('.html', '', $filePath);
+        $storeCodeStr = substr($storeCodeStr, strrpos($storeCodeStr, '---') + 3);
+
+        if ($storeCodeStr === '_all_') {
+            return ['_all_'];
+        }
+
+        return explode('---', $storeCodeStr);
     }
 }
