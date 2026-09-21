@@ -498,7 +498,11 @@ class ImportCmsDataService
     private function getStoreCodesFromFile(string $filePath) : array
     {
         $storeCodeStr = str_replace('.html', '', $filePath);
-        $storeCodeStr = substr($storeCodeStr, strrpos($storeCodeStr, '---') + 3);
+        // Find the FIRST occurrence of '---' to separate identifier from store codes
+        $firstSeparator = strpos($storeCodeStr, '---');
+        if ($firstSeparator !== false) {
+            $storeCodeStr = substr($storeCodeStr, $firstSeparator + 3);
+        }
 
         if ($storeCodeStr === '_all_') {
             return ['_all_'];
