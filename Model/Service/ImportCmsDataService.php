@@ -258,10 +258,16 @@ class ImportCmsDataService
                 'is_active' => $block->isActive()
             ];*/
             $storeIds = $this->getStoreIds($jsonData['stores']);
+
+            // Try to load block from target store ONLY
+            // Each store should have its own separate version of the block with its own content
+            $block = null;
             try {
                 $block = $this->getBlockByIdentifier->execute($identifier, (int)reset($storeIds));
                 $this->validateStoreAssociation($filePath, $block, $storeIds, 'Block');
             } catch (\Magento\Framework\Exception\NoSuchEntityException $exception) {
+                // Block doesn't exist for this specific store - create a new one
+                // This allows same identifier in different stores with different content
                 $block = $this->blockFactory->create();
             }
 
@@ -339,12 +345,19 @@ class ImportCmsDataService
             $jsonData = $this->directoryRead->readFile(str_replace('.html', '.json', $filePath));
             $jsonData = $this->serializer->unserialize($jsonData);
             $storeIds = $this->getStoreIds($jsonData['stores']);
+
+            // Try to load page from target store ONLY
+            // Each store should have its own separate version of the page with its own content
+            $page = null;
             try {
                 $page = $this->getPageByIdentifier->execute($identifier, (int)reset($storeIds));
                 $this->validateStoreAssociation($filePath, $page, $storeIds, 'Page');
             } catch (\Magento\Framework\Exception\NoSuchEntityException $exception) {
+                // Page doesn't exist for this specific store - create a new one
+                // This allows same identifier in different stores with different content
                 $page = $this->pageFactory->create();
             }
+
             /*$jsonContent = [
                 'title' => $page->getTitle(),
                 'is_active' => $page->isActive(),
