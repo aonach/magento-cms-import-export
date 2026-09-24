@@ -259,16 +259,34 @@ class ImportCmsDataService
             ];*/
             $storeIds = $this->getStoreIds($jsonData['stores']);
 
-            // Try to load block from target store ONLY
-            // Each store should have its own separate version of the block with its own content
+            // Try to load existing block by identifier
+            // Handle case where same identifier exists across different stores
             $block = null;
             try {
+                // First, try to load from the first target store
                 $block = $this->getBlockByIdentifier->execute($identifier, (int)reset($storeIds));
                 $this->validateStoreAssociation($filePath, $block, $storeIds, 'Block');
             } catch (\Magento\Framework\Exception\NoSuchEntityException $exception) {
-                // Block doesn't exist for this specific store - create a new one
-                // This allows same identifier in different stores with different content
-                $block = $this->blockFactory->create();
+                // If not found in first store, check if it exists in ANY store
+                // This handles multi-store imports where block exists in a different store
+                $blockFound = false;
+                foreach ($storeIds as $storeId) {
+                    try {
+                        $block = $this->getBlockByIdentifier->execute($identifier, (int)$storeId);
+                        // Found in a different store - use this instance
+                        $blockFound = true;
+                        break;
+                    } catch (\Magento\Framework\Exception\NoSuchEntityException $e) {
+                        // Continue checking other stores
+                        continue;
+                    }
+                }
+
+                if (!$blockFound) {
+                    // Block doesn't exist in any store - create a new one
+                    // This allows same identifier in different stores with different content
+                    $block = $this->blockFactory->create();
+                }
             }
 
             $block->setTitle($jsonData['title']);
@@ -346,16 +364,34 @@ class ImportCmsDataService
             $jsonData = $this->serializer->unserialize($jsonData);
             $storeIds = $this->getStoreIds($jsonData['stores']);
 
-            // Try to load page from target store ONLY
-            // Each store should have its own separate version of the page with its own content
+            // Try to load existing page by identifier
+            // Handle case where same identifier exists across different stores
             $page = null;
             try {
+                // First, try to load from the first target store
                 $page = $this->getPageByIdentifier->execute($identifier, (int)reset($storeIds));
                 $this->validateStoreAssociation($filePath, $page, $storeIds, 'Page');
             } catch (\Magento\Framework\Exception\NoSuchEntityException $exception) {
-                // Page doesn't exist for this specific store - create a new one
-                // This allows same identifier in different stores with different content
-                $page = $this->pageFactory->create();
+                // If not found in first store, check if it exists in ANY store
+                // This handles multi-store imports where page exists in a different store
+                $pageFound = false;
+                foreach ($storeIds as $storeId) {
+                    try {
+                        $page = $this->getPageByIdentifier->execute($identifier, (int)$storeId);
+                        // Found in a different store - use this instance
+                        $pageFound = true;
+                        break;
+                    } catch (\Magento\Framework\Exception\NoSuchEntityException $e) {
+                        // Continue checking other stores
+                        continue;
+                    }
+                }
+
+                if (!$pageFound) {
+                    // Page doesn't exist in any store - create a new one
+                    // This allows same identifier in different stores with different content
+                    $page = $this->pageFactory->create();
+                }
             }
 
             /*$jsonContent = [
